@@ -58,7 +58,7 @@ class Settings(BaseSettings):
 
     # === Monitoring ===
     enable_metrics: bool = True
-    metrics_port: int = 9090
+    # metrics_port: int = 9090  # Removed - not needed for deployment, saves memory
 
     # === Environment ===
     environment: str = "development"
@@ -69,7 +69,7 @@ class Settings(BaseSettings):
     max_batch_size: int = 10
     request_timeout: int = 30
 
-    # === Emotion Labels Mapping (for UI / visualization) ===
+    # === Emotion Labels Mapping (updated for consistency) ===
     emotion_labels: dict = {
         "happy": {"emoji": "😊", "color": "#4CAF50"},
         "sad": {"emoji": "😢", "color": "#2196F3"},
@@ -79,6 +79,53 @@ class Settings(BaseSettings):
         "fear": {"emoji": "😨", "color": "#795548"},
         "neutral": {"emoji": "😐", "color": "#9E9E9E"},
     }
+
+    # === Model Configuration (NEW - for model selection) ===
+    @property
+    def available_models(self) -> List[dict]:
+        """Get list of available models with metadata"""
+        models = [
+            {
+                "id": self.hf_primary_model,
+                "name": "ViT Face Expression (Primary)",
+                "provider": "huggingface",
+                "description": "Vision Transformer trained on FER2013 dataset",
+                "accuracy": "~85%",
+                "speed": "Fast"
+            }
+        ]
+        
+        # Add alternative HF models
+        for alt_model in self.hf_alternative_models:
+            if alt_model == "dima806/facial_emotions_image_detection":
+                models.append({
+                    "id": alt_model,
+                    "name": "Facial Emotions Detection",
+                    "provider": "huggingface", 
+                    "description": "High accuracy emotion detection model",
+                    "accuracy": "~91%",
+                    "speed": "Medium"
+                })
+            elif alt_model == "RickyIG/emotion_face_image_classification_v2":
+                models.append({
+                    "id": alt_model,
+                    "name": "Emotion Classification v2",
+                    "provider": "huggingface",
+                    "description": "Optimized emotion classification",
+                    "accuracy": "~80%", 
+                    "speed": "Fast"
+                })
+            else:
+                models.append({
+                    "id": alt_model,
+                    "name": alt_model.split("/")[-1].replace("_", " ").title(),
+                    "provider": "huggingface",
+                    "description": "Alternative emotion detection model",
+                    "accuracy": "Unknown",
+                    "speed": "Medium"
+                })
+        
+        return models
 
     @property
     def hf_inference_url(self) -> str:
