@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  emotion-detector:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - HF_API_KEY=${HF_API_KEY}
+      - HF_MODEL_ID=trpakov/vit-face-expression
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - LOG_LEVEL=debug
+      - HOST=0.0.0.0
+      - PORT=8000
+      - WORKERS=1
+      - SECRET_KEY=dev-secret-key-change-in-production
+      - RATE_LIMIT_REQUESTS=1000
+      - RATE_LIMIT_PERIOD=60
+      - CACHE_TTL=300
+      - ENABLE_CACHE=true
+      - CORS_ORIGINS=["*"]
+      - ENABLE_METRICS=true
+    volumes:
+      - ./static:/app/static:ro
+      - ./.env:/app/.env:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    mem_limit: 256m
+    cpus: '0.5'
