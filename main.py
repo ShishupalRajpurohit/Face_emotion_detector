@@ -11,6 +11,7 @@ from typing import Optional, List, Dict, Any
 from contextlib import asynccontextmanager
 import asyncio
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, WebSocket, WebSocketDisconnect, Depends, status, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,7 +26,13 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 from config import get_settings
-from services.emotion_detector import get_emotion_detector, EmotionResult, EmotionDetectorService
+
+# Import the service after config to ensure proper initialization
+try:
+    from services.emotion_detector import get_emotion_detector, EmotionResult, EmotionDetectorService
+except ImportError as e:
+    print(f"Error importing emotion detector: {e}")
+    # We'll handle this in the lifespan function
 
 # Configure structured logging
 structlog.configure(
@@ -110,12 +117,14 @@ async def lifespan(app: FastAPI):
     
     # Initialize emotion detector
     try:
+        from services.emotion_detector import get_emotion_detector
         detector = await get_emotion_detector(settings)
         app.state.detector = detector
         logger.info("Emotion detector initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize detector: {e}")
-        raise
+        # Don't raise - let the app start anyway for health checks
+        app.state.detector = None
     
     # Initialize WebSocket connections manager
     app.state.connections = set()
@@ -124,12 +133,15 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("Shutting down...")
-    if hasattr(app.state, 'detector'):
+    if hasattr(app.state, 'detector') and app.state.detector:
         await app.state.detector.close()
     
     # Close all WebSocket connections
-    for websocket in app.state.connections:
-        await websocket.close()
+    for websocket in app.state.connections.copy():
+        try:
+            await websocket.close()
+        except:
+            pass
 
 
 # Create FastAPI app
@@ -161,6 +173,11 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # Dependency injection
 async def get_detector():
     """Get emotion detector instance"""
+    if not hasattr(app.state, 'detector') or app.state.detector is None:
+        raise HTTPException(
+            status_code=503, 
+            detail="Emotion detector not available. Please check server logs."
+        )
     return app.state.detector
 
 
@@ -168,10 +185,12 @@ async def get_detector():
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
     """Health check endpoint for monitoring"""
-    import psutil
-    
-    process = psutil.Process()
-    memory_mb = process.memory_info().rss / 1024 / 1024
+    try:
+        import psutil
+        process = psutil.Process()
+        memory_mb = process.memory_info().rss / 1024 / 1024
+    except ImportError:
+        memory_mb = 0.0
     
     return HealthResponse(
         status="healthy",
@@ -184,8 +203,11 @@ async def health_check():
 @app.get("/api/status")
 async def api_status():
     """Get API status and configuration"""
+    detector_status = "available" if hasattr(app.state, 'detector') and app.state.detector else "unavailable"
+    
     return {
         "status": "operational",
+        "detector_status": detector_status,
         "model": settings.hf_model_id,
         "available_emotions": list(settings.emotion_labels.keys()),
         "max_image_size": settings.max_image_size,
@@ -199,7 +221,8 @@ async def api_status():
 @app.post("/api/detect", response_model=EmotionResponse)
 @limiter.limit(f"{settings.rate_limit_requests}/minute")
 async def detect_emotion(
-    request: EmotionRequest,
+    request: Request,
+    emotion_request: EmotionRequest,
     detector: EmotionDetectorService = Depends(get_detector)
 ):
     """
@@ -211,7 +234,7 @@ async def detect_emotion(
     """
     try:
         # Decode image
-        image_bytes = base64.b64decode(request.image)
+        image_bytes = base64.b64decode(emotion_request.image)
         
         # Check image size
         if len(image_bytes) > settings.max_image_size:
@@ -223,14 +246,14 @@ async def detect_emotion(
         # Detect emotion
         result = await detector.detect_emotion(
             image_bytes,
-            face_bounds=request.face_bounds
+            face_bounds=emotion_request.face_bounds
         )
         
         return EmotionResponse(
             success=result.face_detected,
             emotion=result.emotion,
             confidence=result.confidence,
-            all_scores=result.all_scores if request.return_all_scores else None,
+            all_scores=result.all_scores if emotion_request.return_all_scores else None,
             processing_time=result.processing_time,
             model_used=result.model_used,
             face_detected=result.face_detected,
@@ -346,7 +369,15 @@ async def websocket_endpoint(websocket: WebSocket):
     """
     await websocket.accept()
     app.state.connections.add(websocket)
-    detector = app.state.detector
+    detector = getattr(app.state, 'detector', None)
+    
+    if not detector:
+        await websocket.send_json({
+            "type": "error",
+            "data": {"error": "Emotion detector not available"}
+        })
+        await websocket.close()
+        return
     
     try:
         while True:
@@ -383,19 +414,41 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.send_json({"type": "pong"})
                 
     except WebSocketDisconnect:
-        app.state.connections.remove(websocket)
+        app.state.connections.discard(websocket)
         logger.info("WebSocket disconnected")
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
-        app.state.connections.remove(websocket)
+        app.state.connections.discard(websocket)
 
 
 # Serve HTML client
 @app.get("/", response_class=HTMLResponse)
 async def get_client():
     """Serve the web client"""
-    with open("static/index.html", "r") as f:
-        return HTMLResponse(content=f.read())
+    try:
+        static_file = Path("static/index.html")
+        if static_file.exists():
+            with open(static_file, "r", encoding="utf-8") as f:
+                return HTMLResponse(content=f.read())
+        else:
+            return HTMLResponse(content="""
+            <html>
+                <head><title>Facial Emotion Detector</title></head>
+                <body>
+                    <h1>Facial Emotion Detector API</h1>
+                    <p>The API is running! However, the static HTML file is not found.</p>
+                    <p>Available endpoints:</p>
+                    <ul>
+                        <li><a href="/health">/health</a> - Health check</li>
+                        <li><a href="/api/status">/api/status</a> - API status</li>
+                        <li><a href="/api/docs">/api/docs</a> - API documentation (if debug enabled)</li>
+                    </ul>
+                </body>
+            </html>
+            """)
+    except Exception as e:
+        logger.error(f"Error serving client: {e}")
+        return HTMLResponse(content=f"<h1>Error loading client: {e}</h1>")
 
 
 if __name__ == "__main__":
