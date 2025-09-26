@@ -14,12 +14,17 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        case_sensitive=False
+        case_sensitive=False,
+        extra="ignore"  # This allows extra fields in .env to be ignored
     )
     
     # Hugging Face Configuration
     hf_api_key: str
     hf_model_id: str = "trpakov/vit-face-expression"
+    
+    # Alternative API Keys (optional)
+    groq_api_key: Optional[str] = None
+    openrouter_api_key: Optional[str] = None
     
     # Alternative models (for fallback or comparison)
     alternative_models: List[str] = [
