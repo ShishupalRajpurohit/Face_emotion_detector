@@ -1,6 +1,6 @@
 """
 Production-ready FastAPI server for Facial Emotion Detection
-Optimized for Render free tier (< 256MB RAM)
+Optimized for Render free tier (< 256MB RAM) with model selection support
 """
 
 import os
@@ -66,6 +66,7 @@ class EmotionRequest(BaseModel):
     image: str  # Base64 encoded image
     face_bounds: Optional[Dict[str, float]] = None
     return_all_scores: bool = True
+    selected_model: Optional[str] = None  # NEW: Model selection support
     
     @validator('image')
     def validate_image(cls, v):
@@ -101,9 +102,21 @@ class HealthResponse(BaseModel):
     environment: str
 
 
+class ModelSelectionRequest(BaseModel):
+    """Request to change selected model"""
+    model_id: str
+
+
+class ModelSelectionResponse(BaseModel):
+    """Response for model selection"""
+    success: bool
+    selected_model: str
+    message: str
+
+
 class WebSocketMessage(BaseModel):
     """WebSocket message format"""
-    type: str  # 'frame', 'config', 'error'
+    type: str  # 'frame', 'config', 'error', 'model_select'
     data: Any
 
 
@@ -147,7 +160,7 @@ async def lifespan(app: FastAPI):
 # Create FastAPI app
 app = FastAPI(
     title="Facial Emotion Detector API",
-    description="Production-ready emotion detection service optimized for low resource usage",
+    description="Production-ready emotion detection service with model selection support",
     version="1.0.0",
     lifespan=lifespan,
     docs_url="/api/docs" if settings.debug else None,
@@ -205,11 +218,19 @@ async def api_status():
     """Get API status and configuration"""
     detector_status = "available" if hasattr(app.state, 'detector') and app.state.detector else "unavailable"
     
+    available_models = []
+    current_model = settings.hf_primary_model
+    
+    if hasattr(app.state, 'detector') and app.state.detector:
+        available_models = app.state.detector.available_models
+        current_model = app.state.detector.selected_model
+    
     return {
         "status": "operational",
         "detector_status": detector_status,
-        "model": settings.hf_primary_model,
-        "alt_models": settings.hf_alternative_models,
+        "current_model": current_model,
+        "available_models": available_models,
+        "model_configs": settings.available_models,
         "available_emotions": list(settings.emotion_labels.keys()),
         "max_image_size": settings.max_image_size,
         "rate_limits": {
@@ -218,7 +239,56 @@ async def api_status():
     }
 
 
-# Main API Endpoints
+# NEW: Model Selection Endpoints
+@app.get("/api/models")
+async def get_available_models():
+    """Get list of available models with their status"""
+    detector = await get_detector()
+    
+    # Check current availability
+    available_models = await detector.check_model_availability()
+    
+    model_info = []
+    for model_config in settings.available_models:
+        is_available = model_config["id"] in available_models
+        is_selected = model_config["id"] == detector.selected_model
+        
+        model_info.append({
+            **model_config,
+            "available": is_available,
+            "selected": is_selected,
+            "status": "ready" if is_available else "unavailable"
+        })
+    
+    return {
+        "models": model_info,
+        "total": len(model_info),
+        "available": len([m for m in model_info if m["available"]])
+    }
+
+
+@app.post("/api/models/select", response_model=ModelSelectionResponse)
+async def select_model(
+    request: ModelSelectionRequest,
+    detector: EmotionDetectorService = Depends(get_detector)
+):
+    """Select a different model for emotion detection"""
+    success = detector.set_selected_model(request.model_id)
+    
+    if success:
+        return ModelSelectionResponse(
+            success=True,
+            selected_model=request.model_id,
+            message=f"Successfully selected model: {request.model_id}"
+        )
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid model ID: {request.model_id}"
+        )
+
+
+# Main API Endpoints (Updated with model selection)
 @app.post("/api/detect", response_model=EmotionResponse)
 @limiter.limit(f"{settings.rate_limit_requests}/minute")
 async def detect_emotion(
@@ -227,11 +297,12 @@ async def detect_emotion(
     detector: EmotionDetectorService = Depends(get_detector)
 ):
     """
-    Detect emotion from a base64 encoded image
+    Detect emotion from a base64 encoded image with optional model selection
     
     - **image**: Base64 encoded image (JPEG/PNG)
     - **face_bounds**: Optional face bounding box {x, y, width, height}
     - **return_all_scores**: Return confidence scores for all emotions
+    - **selected_model**: Optional model ID to use for this request
     """
     try:
         # Decode image
@@ -244,10 +315,11 @@ async def detect_emotion(
                 detail=f"Image size exceeds {settings.max_image_size} bytes"
             )
         
-        # Detect emotion
+        # Detect emotion with optional model selection
         result = await detector.detect_emotion(
             image_bytes,
-            face_bounds=emotion_request.face_bounds
+            face_bounds=emotion_request.face_bounds,
+            selected_model=emotion_request.selected_model
         )
         
         return EmotionResponse(
@@ -274,10 +346,11 @@ async def detect_emotion(
 async def detect_emotion_upload(
     request: Request,
     file: UploadFile = File(...),
+    selected_model: Optional[str] = None,  # NEW: Model selection parameter
     detector: EmotionDetectorService = Depends(get_detector)
 ):
     """
-    Detect emotion from an uploaded image file
+    Detect emotion from an uploaded image file with optional model selection
     """
     try:
         # Validate file type
@@ -298,7 +371,7 @@ async def detect_emotion_upload(
             )
         
         # Detect emotion
-        result = await detector.detect_emotion(contents)
+        result = await detector.detect_emotion(contents, selected_model=selected_model)
         
         return EmotionResponse(
             success=result.face_detected,
@@ -322,10 +395,11 @@ async def detect_emotion_upload(
 async def detect_batch(
     request: Request,
     images: List[str],
+    selected_model: Optional[str] = None,  # NEW: Model selection parameter
     detector: EmotionDetectorService = Depends(get_detector)
 ):
     """
-    Batch emotion detection (max 10 images)
+    Batch emotion detection (max 10 images) with optional model selection
     """
     if len(images) > settings.max_batch_size:
         raise HTTPException(
@@ -342,7 +416,7 @@ async def detect_batch(
             image_bytes_list.append(base64.b64decode(img_str))
         
         # Process batch
-        results = await detector.batch_detect(image_bytes_list)
+        results = await detector.batch_detect(image_bytes_list, selected_model=selected_model)
         
         # Format responses
         responses = []
@@ -351,7 +425,8 @@ async def detect_batch(
                 "emotion": result.emotion,
                 "confidence": result.confidence,
                 "all_scores": result.all_scores,
-                "face_detected": result.face_detected
+                "face_detected": result.face_detected,
+                "model_used": result.model_used
             })
         
         return {"success": True, "results": responses}
@@ -361,11 +436,11 @@ async def detect_batch(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# WebSocket for real-time detection
+# WebSocket for real-time detection (Updated with model selection)
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """
-    WebSocket endpoint for real-time emotion detection
+    WebSocket endpoint for real-time emotion detection with model selection support
     Send base64 encoded frames and receive emotion results
     """
     await websocket.accept()
@@ -395,9 +470,14 @@ async def websocket_endpoint(websocket: WebSocket):
                     
                     image_bytes = base64.b64decode(image_b64)
                     face_bounds = message.get("data", {}).get("face_bounds")
+                    selected_model = message.get("data", {}).get("selected_model")  # NEW
                     
                     # Detect emotion
-                    result = await detector.detect_emotion(image_bytes, face_bounds)
+                    result = await detector.detect_emotion(
+                        image_bytes, 
+                        face_bounds=face_bounds, 
+                        selected_model=selected_model
+                    )
                     
                     # Send result back
                     await websocket.send_json({
@@ -409,6 +489,23 @@ async def websocket_endpoint(websocket: WebSocket):
                     await websocket.send_json({
                         "type": "error",
                         "data": {"error": str(e)}
+                    })
+            
+            elif message["type"] == "model_select":
+                try:
+                    model_id = message["data"]["model_id"]
+                    success = detector.set_selected_model(model_id)
+                    await websocket.send_json({
+                        "type": "model_selected",
+                        "data": {
+                            "success": success,
+                            "selected_model": model_id if success else detector.selected_model
+                        }
+                    })
+                except Exception as e:
+                    await websocket.send_json({
+                        "type": "error",
+                        "data": {"error": f"Model selection failed: {str(e)}"}
                     })
             
             elif message["type"] == "ping":
@@ -442,6 +539,7 @@ async def get_client():
                     <ul>
                         <li><a href="/health">/health</a> - Health check</li>
                         <li><a href="/api/status">/api/status</a> - API status</li>
+                        <li><a href="/api/models">/api/models</a> - Available models</li>
                         <li><a href="/api/docs">/api/docs</a> - API documentation (if debug enabled)</li>
                     </ul>
                 </body>
