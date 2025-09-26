@@ -29,7 +29,7 @@ from config import get_settings
 
 # Import the service after config to ensure proper initialization
 try:
-    from services.emotion_detector import get_emotion_detector, EmotionResult, EmotionDetectorService
+    from services.emotion_detector import get_emotion_detector, EmotionDetectorService, EmotionResult
 except ImportError as e:
     print(f"Error importing emotion detector: {e}")
     # We'll handle this in the lifespan function
@@ -208,7 +208,8 @@ async def api_status():
     return {
         "status": "operational",
         "detector_status": detector_status,
-        "model": settings.hf_model_id,
+        "model": settings.hf_primary_model,
+        "alt_models": settings.hf_alternative_models,
         "available_emotions": list(settings.emotion_labels.keys()),
         "max_image_size": settings.max_image_size,
         "rate_limits": {

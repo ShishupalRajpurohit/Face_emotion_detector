@@ -10,67 +10,66 @@ import secrets
 
 class Settings(BaseSettings):
     """Application settings with environment variable support"""
-    
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
-        extra="ignore"  # This allows extra fields in .env to be ignored
+        extra="ignore",  # ignore unknown fields in .env
     )
-    
-    # Hugging Face Configuration
+
+    # === Hugging Face Configuration ===
     hf_api_key: str
-    hf_model_id: str = "trpakov/vit-face-expression"
-    
-    # Alternative API Keys (optional)
+    hf_primary_model: str = "trpakov/vit-face-expression"
+    hf_alt_models: Optional[str] = None  # comma-separated in .env
+
+    # === Alternative API Keys (optional) ===
     groq_api_key: Optional[str] = None
     openrouter_api_key: Optional[str] = None
-    
-    # Alternative models (for fallback or comparison)
-    alternative_models: List[str] = [
-        "dima806/facial_emotions_image_detection",
-        "RickyIG/emotion_face_image_classification_v2",
-    ]
-    
-    # Server Configuration
+
+    # === Fallback Models for Groq / OpenRouter ===
+    groq_models: Optional[str] = None  # comma-separated in .env
+    openrouter_models: Optional[str] = None
+
+    # === Server Configuration ===
     host: str = "0.0.0.0"
     port: int = 8000
     workers: int = 1
     log_level: str = "info"
-    
-    # Security
+
+    # === Security ===
     secret_key: str = secrets.token_urlsafe(32)
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
-    
-    # Rate Limiting
+
+    # === Rate Limiting ===
     rate_limit_requests: int = 100
     rate_limit_period: int = 60
-    
-    # Cache Configuration
+
+    # === Cache Configuration ===
     cache_ttl: int = 300
     enable_cache: bool = True
-    
-    # CORS Settings
+
+    # === CORS Settings ===
     cors_origins: List[str] = ["*"]
     cors_credentials: bool = True
     cors_methods: List[str] = ["*"]
     cors_headers: List[str] = ["*"]
-    
-    # Monitoring
+
+    # === Monitoring ===
     enable_metrics: bool = True
     metrics_port: int = 9090
-    
-    # Environment
+
+    # === Environment ===
     environment: str = "development"
     debug: bool = False
-    
-    # Performance Settings
+
+    # === Performance Settings ===
     max_image_size: int = 1024 * 1024  # 1MB
     max_batch_size: int = 10
     request_timeout: int = 30
-    
-    # Emotion Labels Mapping
+
+    # === Emotion Labels Mapping (for UI / visualization) ===
     emotion_labels: dict = {
         "happy": {"emoji": "😊", "color": "#4CAF50"},
         "sad": {"emoji": "😢", "color": "#2196F3"},
@@ -80,12 +79,31 @@ class Settings(BaseSettings):
         "fear": {"emoji": "😨", "color": "#795548"},
         "neutral": {"emoji": "😐", "color": "#9E9E9E"},
     }
-    
+
     @property
     def hf_inference_url(self) -> str:
         """Generate Hugging Face inference API URL"""
-        return f"https://api-inference.huggingface.co/models/{self.hf_model_id}"
-    
+        return f"https://api-inference.huggingface.co/models/{self.hf_primary_model}"
+
+    @property
+    def hf_alternative_models(self) -> List[str]:
+        """Parse HF_ALT_MODELS env var into list"""
+        if not self.hf_alt_models:
+            return []
+        return [m.strip() for m in self.hf_alt_models.split(",") if m.strip()]
+
+    @property
+    def groq_model_list(self) -> List[str]:
+        if not self.groq_models:
+            return []
+        return [m.strip() for m in self.groq_models.split(",") if m.strip()]
+
+    @property
+    def openrouter_model_list(self) -> List[str]:
+        if not self.openrouter_models:
+            return []
+        return [m.strip() for m in self.openrouter_models.split(",") if m.strip()]
+
     def validate_settings(self) -> None:
         """Validate critical settings"""
         if not self.hf_api_key or self.hf_api_key == "hf_xxxxxxxxxxxxxxxxxxxxx":
@@ -93,7 +111,7 @@ class Settings(BaseSettings):
                 "HF_API_KEY is not set! Get your API key from: "
                 "https://huggingface.co/settings/tokens"
             )
-        
+
         if self.environment == "production":
             if self.debug:
                 raise ValueError("Debug mode should be disabled in production")
