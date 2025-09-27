@@ -1,5 +1,4 @@
 
-````markdown
 <div align="center">
 
 # 🎭 Facial Emotion Detector Pro
@@ -88,10 +87,11 @@ graph TB
     B --> H[🔄 REST API]
     I[🐳 Docker Container] --> J[☁️ Render Deployment]
     
-    style A fill:#e1f5fe
-    style B fill:#f3e5f5
-    style C fill:#fff3e0
-    style I fill:#e8f5e8
+    style A fill:#e3f2fd, stroke:#1976d2, color:#0d47a1
+    style B fill:#f3e5f5, stroke:#6a1b9a, color:#4a148c
+    style C fill:#fff3e0, stroke:#ef6c00, color:#e65100
+    style I fill:#e8f5e8, stroke:#388e3c, color:#1b5e20
+
 ````
 
 ---
@@ -575,10 +575,7 @@ git push origin feature/amazing-feature
 [![Documentation](https://img.shields.io/badge/Docs-Wiki-blue?style=for-the-badge\&logo=gitbook)](https://github.com/ShishupalRajpurohit/Face_emotion_detector/wiki)
 [![Demo](https://img.shields.io/badge/Live-Demo-green?style=for-the-badge\&logo=vercel)](https://face-emotion-detector-fjuk.onrender.com/)
 
-**📧 Email:** [[shishupalrajpurohit2000@gmail.com](mailto:shishupalrajpurohit2000@gmail.com)](mailto:shishupalrajpurohit2000@gmail
-
-
-.com)
+**📧 Email:** [[shishupalrajpurohit2000@gmail.com](mailto:shishupalrajpurohit2000@gmail.com)]
 **📷 Instagram:** [@photoholic.200](https://www.instagram.com/photoholic.200/)
 **💼 LinkedIn:** [Shishupal Rajpurohit](https://www.linkedin.com/in/shishupal-rajpurohit-039290190/)
 **🌐 Portfolio:** [My Portfolio Website](https://sites.google.com/view/shishupals-portfolio/home)
@@ -604,11 +601,10 @@ git push origin feature/amazing-feature
 
 <div align="center">
 
-*Last updated: December 2024*
+*Last updated: September 2025*
 
 [![GitHub stars](https://img.shields.io/github/stars/ShishupalRajpurohit/Face_emotion_detector?style=social)](https://github.com/ShishupalRajpurohit/Face_emotion_detector)
 [![GitHub forks](https://img.shields.io/github/forks/ShishupalRajpurohit/Face_emotion_detector?style=social)](https://github.com/ShishupalRajpurohit/Face_emotion_detector)
 [![GitHub watchers](https://img.shields.io/github/watchers/ShishupalRajpurohit/Face_emotion_detector?style=social)](https://github.com/ShishupalRajpurohit/Face_emotion_detector)
 
 </div>
-```
