@@ -48,21 +48,25 @@
         }
 
         .model-selector {
-            max-height: 200px;
+            max-height: 300px;
             overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
         }
 
         .model-option {
             transition: all 0.2s ease;
+            border-left: 3px solid transparent;
         }
 
         .model-option:hover {
             background: rgba(255, 255, 255, 0.1);
+            border-left-color: rgba(59, 130, 246, 0.5);
         }
 
         .model-option.selected {
             background: rgba(59, 130, 246, 0.2);
-            border-left: 4px solid #3B82F6;
+            border-left-color: #3B82F6;
         }
 
         .model-option.unavailable {
@@ -70,13 +74,30 @@
             cursor: not-allowed;
         }
 
-        /* NEW: Provider-specific styles */
-        .provider-tag {
-            font-size: 0.7rem;
+        .provider-badge {
+            font-size: 10px;
             padding: 2px 6px;
-            border-radius: 6px;
-            background: rgba(255, 255, 255, 0.15);
-            margin-left: 6px;
+            border-radius: 4px;
+        }
+
+        .camera-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 18px;
+            z-index: 5;
+            pointer-events: none;
+        }
+
+        .camera-overlay.blocking {
+            pointer-events: all;
         }
     </style>
 </head>
@@ -88,9 +109,12 @@
                 <div class="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg flex items-center justify-center">
                     <span class="text-2xl">🎭</span>
                 </div>
-                <h1 class="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400">
-                    Emotion Detector
-                </h1>
+                <div>
+                    <h1 class="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400">
+                        Emotion Detector Pro
+                    </h1>
+                    <p class="text-xs text-gray-300">Multi-Provider AI Analysis</p>
+                </div>
             </div>
             <div class="flex items-center space-x-4">
                 <div id="fps-counter" class="text-sm glass-effect px-3 py-1 rounded-lg">
@@ -118,12 +142,21 @@
                         <video id="video" class="w-full h-full object-cover" autoplay muted></video>
                         <canvas id="overlay-canvas" class="absolute top-0 left-0 w-full h-full pointer-events-none"></canvas>
                         
+                        <!-- Camera Off Overlay -->
+                        <div id="camera-off-overlay" class="camera-overlay">
+                            <div class="text-center">
+                                <div class="text-6xl mb-4">📹</div>
+                                <p>Camera is OFF</p>
+                                <p class="text-sm text-gray-300 mt-2">Click "Start Camera" to begin</p>
+                            </div>
+                        </div>
+                        
                         <!-- Controls Overlay -->
-                        <div class="absolute bottom-4 left-4 right-4 flex justify-between items-center">
+                        <div class="absolute bottom-4 left-4 right-4 flex justify-between items-center z-20">
                             <button id="toggle-camera" class="glass-effect px-4 py-2 rounded-lg hover:bg-white/20 transition">
                                 <span id="camera-icon">🎥</span> <span id="camera-text">Start Camera</span>
                             </button>
-                            <button id="capture-btn" class="glass-effect px-4 py-2 rounded-lg hover:bg-white/20 transition">
+                            <button id="capture-btn" class="glass-effect px-4 py-2 rounded-lg hover:bg-white/20 transition disabled:opacity-50" disabled>
                                 📸 Capture
                             </button>
                         </div>
@@ -164,9 +197,6 @@
                                 </div>
                             </div>
                         </div>
-                        <div id="provider-info" class="mt-4 text-sm text-gray-400">
-                            Provider: <span id="provider-name">N/A</span>
-                        </div>
                     </div>
                 </div>
 
@@ -177,63 +207,68 @@
                     </h2>
                     <div id="emotion-bars" class="space-y-3">
                         <!-- Emotion bars will be inserted here -->
+                        <div class="text-center text-gray-400 py-8">
+                            <div class="text-4xl mb-2">🔍</div>
+                            <p>Start camera to see emotion analysis</p>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Enhanced Stats & Model Selection -->
+        <!-- Enhanced Control Panel -->
         <div class="grid md:grid-cols-4 gap-6 mb-8 slide-up" style="animation-delay: 0.2s">
-            <!-- Model Selection -->
-            <div class="glass-effect rounded-xl p-4">
-                <h3 class="font-semibold mb-3 flex items-center">
-                    <span class="mr-2">🤖</span> Model Selection
+            <!-- Enhanced Model Selection -->
+            <div class="md:col-span-2 glass-effect rounded-xl p-4">
+                <h3 class="font-semibold mb-3 flex items-center justify-between">
+                    <span><span class="mr-2">🤖</span> Model Selection</span>
+                    <span id="model-count" class="text-xs text-gray-300">0 models</span>
                 </h3>
-                <div class="space-y-2">
-                    <div class="text-xs text-gray-300 mb-2">Current Model:</div>
-                    <div id="current-model" class="text-sm font-mono text-blue-300 mb-3">Loading...</div>
+                
+                <div class="space-y-3">
+                    <!-- Current Model Display -->
+                    <div class="glass-effect rounded-lg p-3">
+                        <div class="text-xs text-gray-300 mb-1">Current Model:</div>
+                        <div id="current-model-name" class="font-semibold text-sm">Loading...</div>
+                        <div class="flex items-center justify-between mt-2">
+                            <span id="current-model-provider" class="provider-badge bg-blue-600 text-white">-</span>
+                            <span id="current-model-accuracy" class="text-xs text-gray-300">-</span>
+                        </div>
+                    </div>
                     
                     <button id="model-selector-btn" class="w-full glass-effect px-3 py-2 rounded text-sm hover:bg-white/20 transition">
-                        Select Model
+                        Select Different Model
                     </button>
                     
-                    <!-- Dropdown Model List -->
-                    <div id="model-dropdown" class="hidden model-selector glass-effect rounded-lg mt-2 p-2">
-                        <div id="model-list">
-                            <!-- Models will be loaded here -->
+                    <!-- Enhanced Model Dropdown -->
+                    <div id="model-dropdown" class="hidden">
+                        <div class="glass-effect rounded-lg p-2 model-selector">
+                            <div id="model-list" class="space-y-2">
+                                <!-- Models will be loaded here -->
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Processing Stats -->
+            <!-- Performance Stats -->
             <div class="glass-effect rounded-xl p-4">
                 <h3 class="font-semibold mb-3 flex items-center">
                     <span class="mr-2">⚡</span> Performance
                 </h3>
                 <div class="space-y-2 text-sm">
                     <div class="flex justify-between">
-                        <span class="text-gray-300">Processing Time:</span>
+                        <span class="text-gray-300">Processing:</span>
                         <span id="proc-time" class="font-mono">0ms</span>
                     </div>
                     <div class="flex justify-between">
-                        <span class="text-gray-300">Model Accuracy:</span>
-                        <span id="model-accuracy" class="text-xs">~85%</span>
-                    </div>
-                    <div class="flex justify-between">
-                        <span class="text-gray-300">Frames Processed:</span>
+                        <span class="text-gray-300">Frames:</span>
                         <span id="frame-count" class="font-mono">0</span>
                     </div>
-                </div>
-            </div>
-
-            <!-- Recent Emotions -->
-            <div class="glass-effect rounded-xl p-4">
-                <h3 class="font-semibold mb-3 flex items-center">
-                    <span class="mr-2">📜</span> Recent History
-                </h3>
-                <div id="emotion-history" class="space-y-1 text-sm max-h-32 overflow-y-auto">
-                    <!-- History items will be inserted here -->
+                    <div class="flex justify-between">
+                        <span class="text-gray-300">Status:</span>
+                        <span id="detection-status" class="text-xs">Idle</span>
+                    </div>
                 </div>
             </div>
 
@@ -244,33 +279,47 @@
                 </h3>
                 <div class="space-y-3">
                     <label class="flex items-center justify-between text-sm">
-                        <span>Show Face Mesh</span>
+                        <span>Face Mesh</span>
                         <input type="checkbox" id="show-mesh" class="rounded">
                     </label>
                     <label class="flex items-center justify-between text-sm">
-                        <span>Auto Capture</span>
+                        <span>Auto Detect</span>
                         <input type="checkbox" id="auto-capture" class="rounded" checked>
                     </label>
                     <label class="flex items-center justify-between text-sm">
                         <span>Interval (ms)</span>
-                        <input type="number" id="capture-interval" value="500" min="100" max="2000" step="100"
-                               class="w-20 bg-white/10 rounded px-2 py-1 text-right">
+                        <input type="number" id="capture-interval" value="800" min="200" max="3000" step="100"
+                               class="w-20 bg-white/10 rounded px-2 py-1 text-right text-xs">
                     </label>
                 </div>
             </div>
         </div>
 
-        <!-- Upload Section -->
-        <div class="mt-8 glass-effect rounded-2xl p-6 slide-up" style="animation-delay: 0.3s">
+        <!-- Recent History -->
+        <div class="glass-effect rounded-2xl p-6 mb-8 slide-up" style="animation-delay: 0.3s">
             <h2 class="text-xl font-semibold mb-4 flex items-center">
-                <span class="mr-2">📁</span> Upload Image
+                <span class="mr-2">📜</span> Recent History
+            </h2>
+            <div id="emotion-history" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                <!-- History items will be inserted here -->
+                <div class="text-center text-gray-400 col-span-full py-8">
+                    <div class="text-4xl mb-2">⏳</div>
+                    <p>No detection history yet</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Upload Section -->
+        <div class="glass-effect rounded-2xl p-6 slide-up" style="animation-delay: 0.4s">
+            <h2 class="text-xl font-semibold mb-4 flex items-center">
+                <span class="mr-2">📁</span> Upload Image Analysis
             </h2>
             <div class="border-2 border-dashed border-white/20 rounded-xl p-8 text-center hover:border-white/40 transition">
                 <input type="file" id="file-input" accept="image/*" class="hidden">
                 <label for="file-input" class="cursor-pointer">
                     <div class="text-6xl mb-4">📤</div>
                     <p class="text-lg">Drop an image here or click to upload</p>
-                    <p class="text-sm text-gray-400 mt-2">Supports JPEG, PNG, WebP</p>
+                    <p class="text-sm text-gray-400 mt-2">Supports JPEG, PNG, WebP • Max 2MB</p>
                 </label>
             </div>
             <div id="upload-result" class="mt-4 hidden">
@@ -289,12 +338,14 @@
         let ws = null;
         let faceDetection = null;
         let isProcessing = false;
+        let isCameraActive = false;
         let frameCount = 0;
         let lastFrameTime = Date.now();
         let fpsValues = [];
         let emotionHistory = [];
         let availableModels = [];
         let selectedModel = null;
+        let lastDetectionTime = 0;
         
         // Emotion configuration
         const emotionConfig = {
@@ -316,7 +367,7 @@
             
             faceDetection.setOptions({
                 model: 'short',
-                minDetectionConfidence: 0.5
+                minDetectionConfidence: 0.6
             });
             
             faceDetection.onResults(onFaceResults);
@@ -324,6 +375,8 @@
         
         // Process face detection results
         function onFaceResults(results) {
+            if (!isCameraActive) return; // Don't process if camera is off
+            
             const canvas = document.getElementById('overlay-canvas');
             const ctx = canvas.getContext('2d');
             const video = document.getElementById('video');
@@ -360,17 +413,20 @@
                 }
             }
             
-            // Process for emotion detection
-            if (document.getElementById('auto-capture').checked && !isProcessing) {
+            // Process for emotion detection only if camera is active and auto-capture is enabled
+            if (document.getElementById('auto-capture').checked && !isProcessing && isCameraActive) {
                 const interval = parseInt(document.getElementById('capture-interval').value);
-                if (Date.now() - lastFrameTime > interval) {
+                const currentTime = Date.now();
+                if (currentTime - lastFrameTime > interval) {
                     captureAndDetect(results.detections.length > 0 ? results.detections[0] : null);
-                    lastFrameTime = Date.now();
+                    lastFrameTime = currentTime;
                 }
             }
             
-            // Update FPS
-            updateFPS();
+            // Update FPS only when camera is active
+            if (isCameraActive) {
+                updateFPS();
+            }
         }
         
         // Initialize WebSocket connection
@@ -401,12 +457,11 @@
             
             ws.onclose = () => {
                 updateStatus('Disconnected', 'yellow');
-                // Reconnect after 3 seconds
                 setTimeout(initWebSocket, 3000);
             };
         }
 
-        // NEW: Load available models
+        // Load available models with enhanced metadata
         async function loadAvailableModels() {
             try {
                 const response = await fetch(`${API_BASE_URL}/api/models`);
@@ -414,22 +469,49 @@
                     const data = await response.json();
                     availableModels = data.models;
                     updateModelSelector();
+                    updateModelCount();
                     
                     // Set current selected model
                     const currentModel = availableModels.find(m => m.selected);
                     if (currentModel) {
                         selectedModel = currentModel.id;
-                        document.getElementById('current-model').textContent = 
-                            currentModel.name || currentModel.id.split('/').pop();
-                        document.getElementById('model-accuracy').textContent = currentModel.accuracy || '~85%';
+                        updateCurrentModelDisplay(currentModel);
                     }
                 }
             } catch (error) {
                 console.error('Failed to load models:', error);
+                updateStatus('Model Load Error', 'red');
             }
         }
 
-        // NEW: Update model selector UI
+        // Update model count display
+        function updateModelCount() {
+            const availableCount = availableModels.filter(m => m.available !== false).length;
+            document.getElementById('model-count').textContent = `${availableCount}/${availableModels.length} available`;
+        }
+
+        // Update current model display with enhanced info
+        function updateCurrentModelDisplay(model) {
+            document.getElementById('current-model-name').textContent = model.name || model.id.split('/').pop();
+            
+            const providerBadge = document.getElementById('current-model-provider');
+            providerBadge.textContent = model.provider || 'Unknown';
+            providerBadge.className = `provider-badge ${getProviderColor(model.provider)}`;
+            
+            document.getElementById('current-model-accuracy').textContent = model.accuracy || 'Unknown';
+        }
+
+        // Get provider-specific colors
+        function getProviderColor(provider) {
+            const colors = {
+                'Hugging Face': 'bg-yellow-600 text-white',
+                'Groq': 'bg-green-600 text-white',
+                'OpenRouter': 'bg-purple-600 text-white'
+            };
+            return colors[provider] || 'bg-gray-600 text-white';
+        }
+
+        // Enhanced model selector with detailed information
         function updateModelSelector() {
             const modelList = document.getElementById('model-list');
             modelList.innerHTML = '';
@@ -440,48 +522,74 @@
             }
             
             if (availableModels.length === 1) {
-                // Only one model available - show as disabled selector
-                document.getElementById('model-selector-btn').textContent = 'Single Model Available';
+                document.getElementById('model-selector-btn').textContent = 'Single Model Only';
                 document.getElementById('model-selector-btn').disabled = true;
                 return;
             }
             
+            // Group models by provider
+            const grouped = {};
             availableModels.forEach(model => {
-                const modelDiv = document.createElement('div');
-                modelDiv.className = `model-option p-2 cursor-pointer rounded text-xs ${
-                    model.selected ? 'selected' : ''
-                } ${!model.available ? 'unavailable' : ''}`;
-                
-                modelDiv.innerHTML = `
-                    <div class="font-semibold">${model.name}</div>
-                    <div class="text-gray-300 text-xs">${model.description}</div>
-                    <div class="flex justify-between mt-1">
-                        <span class="text-xs">Accuracy: ${model.accuracy}</span>
-                        <span class="text-xs ${model.available ? 'text-green-400' : 'text-red-400'}">
-                            ${model.available ? '✓ Ready' : '✗ Unavailable'}
-                        </span>
-                    </div>
+                const provider = model.provider || 'Unknown';
+                if (!grouped[provider]) grouped[provider] = [];
+                grouped[provider].push(model);
+            });
+            
+            Object.keys(grouped).forEach(provider => {
+                // Add provider header
+                const providerHeader = document.createElement('div');
+                providerHeader.className = 'text-xs font-semibold text-gray-300 px-2 py-1 border-b border-white/10';
+                providerHeader.innerHTML = `
+                    <span class="provider-badge ${getProviderColor(provider)} mr-2">${provider}</span>
+                    ${grouped[provider].length} model${grouped[provider].length > 1 ? 's' : ''}
                 `;
+                modelList.appendChild(providerHeader);
                 
-                if (model.available) {
-                    modelDiv.addEventListener('click', () => selectModel(model.id, model.name));
-                }
-                
-                modelList.appendChild(modelDiv);
+                // Add models for this provider
+                grouped[provider].forEach(model => {
+                    const modelDiv = document.createElement('div');
+                    const isAvailable = model.available !== false;
+                    const isSelected = model.id === selectedModel;
+                    
+                    modelDiv.className = `model-option p-3 cursor-pointer text-xs ${
+                        isSelected ? 'selected' : ''
+                    } ${!isAvailable ? 'unavailable' : ''}`;
+                    
+                    modelDiv.innerHTML = `
+                        <div class="flex items-center justify-between mb-1">
+                            <div class="font-semibold truncate">${model.name}</div>
+                            <div class="text-xs ${isAvailable ? 'text-green-400' : 'text-red-400'}">
+                                ${isAvailable ? '✓' : '✗'}
+                            </div>
+                        </div>
+                        <div class="text-gray-300 text-xs mb-2">${model.description}</div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-xs">Accuracy: ${model.accuracy}</span>
+                            <span class="text-xs">Speed: ${model.speed || 'Unknown'}</span>
+                        </div>
+                        ${model.company ? `<div class="text-xs text-gray-400 mt-1">by ${model.company}</div>` : ''}
+                    `;
+                    
+                    if (isAvailable && !isSelected) {
+                        modelDiv.addEventListener('click', () => selectModel(model.id, model));
+                    }
+                    
+                    modelList.appendChild(modelDiv);
+                });
             });
         }
 
-        // NEW: Select model
-        async function selectModel(modelId, modelName) {
+        // Select model with enhanced feedback
+        async function selectModel(modelId, modelData) {
             try {
-                // Update via WebSocket if connected
+                updateStatus('Switching Model...', 'yellow');
+                
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({
                         type: 'model_select',
                         data: { model_id: modelId }
                     }));
                 } else {
-                    // Fallback to HTTP API
                     const response = await fetch(`${API_BASE_URL}/api/models/select`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -495,33 +603,43 @@
                 }
             } catch (error) {
                 console.error('Model selection failed:', error);
+                updateStatus('Model Switch Failed', 'red');
             }
         }
 
-        // NEW: Handle model selection response
+        // Handle model selection response
         function handleModelSelection(data) {
             if (data.success) {
                 selectedModel = data.selected_model;
                 const model = availableModels.find(m => m.id === selectedModel);
                 if (model) {
-                    document.getElementById('current-model').textContent = model.name || model.id.split('/').pop();
-                    document.getElementById('model-accuracy').textContent = model.accuracy || '~85%';
-                    
-                    // Update UI
+                    updateCurrentModelDisplay(model);
                     updateModelSelector();
                     document.getElementById('model-dropdown').classList.add('hidden');
                     
+                    updateStatus('Model Changed', 'green');
+                    setTimeout(() => updateStatus('Ready', 'green'), 2000);
+                    
                     console.log(`Model changed to: ${model.name}`);
                 }
+            } else {
+                updateStatus('Model Switch Failed', 'red');
             }
         }
         
-        // Capture frame and detect emotion (UPDATED with model selection)
+        // Enhanced capture and detect with proper camera state checking
         async function captureAndDetect(faceDetection) {
-            if (isProcessing) return;
+            if (isProcessing || !isCameraActive) return;
+            
             isProcessing = true;
+            document.getElementById('detection-status').textContent = 'Processing...';
             
             const video = document.getElementById('video');
+            if (!video.videoWidth || !video.videoHeight) {
+                isProcessing = false;
+                return;
+            }
+            
             const canvas = document.createElement('canvas');
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
@@ -529,7 +647,7 @@
             ctx.drawImage(video, 0, 0);
             
             // Convert to base64
-            const imageData = canvas.toDataURL('image/jpeg', 0.8);
+            const imageData = canvas.toDataURL('image/jpeg', 0.85);
             
             // Prepare face bounds if detected
             let faceBounds = null;
@@ -550,11 +668,10 @@
                     data: {
                         image: imageData,
                         face_bounds: faceBounds,
-                        selected_model: selectedModel  // NEW: Include selected model
+                        selected_model: selectedModel
                     }
                 }));
             } else {
-                // Fallback to HTTP API
                 try {
                     const response = await fetch(`${API_BASE_URL}/api/detect`, {
                         method: 'POST',
@@ -562,7 +679,7 @@
                         body: JSON.stringify({
                             image: imageData.split(',')[1],
                             face_bounds: faceBounds,
-                            selected_model: selectedModel  // NEW: Include selected model
+                            selected_model: selectedModel
                         })
                     });
                     
@@ -576,11 +693,20 @@
             }
             
             frameCount++;
+            lastDetectionTime = Date.now();
             isProcessing = false;
         }
         
-        // Handle emotion detection results
+        // Handle emotion detection results with better validation
         function handleEmotionResult(result) {
+            // Validate result
+            if (!result || !result.emotion) {
+                console.warn('Invalid emotion result:', result);
+                return;
+            }
+            
+            document.getElementById('detection-status').textContent = 'Complete';
+            
             // Update main display
             const config = emotionConfig[result.emotion] || emotionConfig.unknown;
             document.getElementById('emotion-emoji').textContent = config.emoji;
@@ -588,7 +714,7 @@
                 result.emotion.charAt(0).toUpperCase() + result.emotion.slice(1);
             
             // Update confidence circle
-            const confidence = Math.round(result.confidence * 100);
+            const confidence = Math.round((result.confidence || 0) * 100);
             document.getElementById('confidence-value').textContent = `${confidence}%`;
             const circle = document.getElementById('confidence-circle');
             const circumference = 2 * Math.PI * 56;
@@ -602,14 +728,14 @@
             
             // Update stats
             document.getElementById('proc-time').textContent = 
-                `${Math.round(result.processing_time * 1000)}ms`;
+                `${Math.round((result.processing_time || 0) * 1000)}ms`;
             document.getElementById('frame-count').textContent = frameCount;
             
             // Add to history
-            addToHistory(result.emotion, result.confidence);
+            addToHistory(result.emotion, result.confidence, result.model_used);
         }
         
-        // Update emotion bars
+        // Update emotion bars with better styling
         function updateEmotionBars(scores) {
             const container = document.getElementById('emotion-bars');
             container.innerHTML = '';
@@ -629,7 +755,7 @@
                         <span class="text-sm font-mono">${percentage}%</span>
                     </div>
                     <div class="w-full bg-white/10 rounded-full h-2 overflow-hidden">
-                        <div class="h-full rounded-full transition-all duration-500" 
+                        <div class="h-full rounded-full transition-all duration-700" 
                              style="width: ${percentage}%; background: ${config.color}"></div>
                     </div>
                 `;
@@ -637,26 +763,29 @@
             });
         }
         
-        // Add to emotion history
-        function addToHistory(emotion, confidence) {
+        // Enhanced history with model information
+        function addToHistory(emotion, confidence, modelUsed) {
             const config = emotionConfig[emotion] || emotionConfig.unknown;
             const time = new Date().toLocaleTimeString();
             
             emotionHistory.unshift({
                 emotion,
                 confidence,
-                time
+                time,
+                model: modelUsed
             });
             
-            // Keep only last 10
-            emotionHistory = emotionHistory.slice(0, 10);
+            // Keep only last 12 items
+            emotionHistory = emotionHistory.slice(0, 12);
             
-            // Update display
+            // Update display with grid layout
             const container = document.getElementById('emotion-history');
             container.innerHTML = emotionHistory.map(item => `
-                <div class="flex justify-between items-center py-1 border-b border-white/10">
-                    <span>${emotionConfig[item.emotion].emoji} ${item.emotion}</span>
-                    <span class="text-xs text-gray-400">${item.time}</span>
+                <div class="glass-effect rounded-lg p-3 text-center">
+                    <div class="text-2xl mb-1">${emotionConfig[item.emotion].emoji}</div>
+                    <div class="text-xs font-semibold">${item.emotion}</div>
+                    <div class="text-xs text-gray-400">${Math.round(item.confidence * 100)}%</div>
+                    <div class="text-xs text-gray-500">${item.time}</div>
                 </div>
             `).join('');
         }
@@ -664,18 +793,20 @@
         // Update FPS counter
         function updateFPS() {
             const now = Date.now();
-            const fps = 1000 / (now - lastFrameTime);
-            fpsValues.push(fps);
-            
-            if (fpsValues.length > 30) {
-                fpsValues.shift();
+            if (lastFrameTime > 0) {
+                const fps = 1000 / (now - lastFrameTime);
+                fpsValues.push(fps);
+                
+                if (fpsValues.length > 10) {
+                    fpsValues.shift();
+                }
+                
+                const avgFps = Math.round(
+                    fpsValues.reduce((a, b) => a + b, 0) / fpsValues.length
+                );
+                
+                document.getElementById('fps-value').textContent = avgFps;
             }
-            
-            const avgFps = Math.round(
-                fpsValues.reduce((a, b) => a + b, 0) / fpsValues.length
-            );
-            
-            document.getElementById('fps-value').textContent = avgFps;
         }
         
         // Update status indicator
@@ -685,46 +816,73 @@
             dot.className = `w-3 h-3 rounded-full animate-pulse bg-${color}-500`;
         }
         
-        // Initialize camera
+        // Enhanced camera initialization
         async function initCamera() {
             const video = document.getElementById('video');
             
-            camera = new Camera(video, {
-                onFrame: async () => {
-                    if (faceDetection) {
-                        await faceDetection.send({ image: video });
-                    }
-                },
-                width: 640,
-                height: 480
-            });
-            
-            await camera.start();
-            
-            document.getElementById('camera-text').textContent = 'Stop Camera';
-            document.getElementById('camera-icon').textContent = '⏹️';
-            updateStatus('Camera Active', 'green');
+            try {
+                camera = new Camera(video, {
+                    onFrame: async () => {
+                        if (faceDetection && isCameraActive) {
+                            await faceDetection.send({ image: video });
+                        }
+                    },
+                    width: 640,
+                    height: 480
+                });
+                
+                await camera.start();
+                isCameraActive = true;
+                
+                // Hide overlay and enable controls
+                document.getElementById('camera-off-overlay').style.display = 'none';
+                document.getElementById('capture-btn').disabled = false;
+                
+                document.getElementById('camera-text').textContent = 'Stop Camera';
+                document.getElementById('camera-icon').textContent = '⏹️';
+                updateStatus('Camera Active', 'green');
+                
+            } catch (error) {
+                console.error('Camera initialization failed:', error);
+                updateStatus('Camera Error', 'red');
+                alert('Camera access denied or not available');
+            }
         }
         
-        // Stop camera
+        // Enhanced camera stop
         function stopCamera() {
             if (camera) {
                 camera.stop();
                 camera = null;
             }
             
+            isCameraActive = false;
+            isProcessing = false;
+            frameCount = 0;
+            fpsValues = [];
+            
+            // Show overlay and disable controls
+            const overlay = document.getElementById('camera-off-overlay');
+            overlay.style.display = 'flex';
+            overlay.classList.remove('blocking');
+            document.getElementById('capture-btn').disabled = true;
+            document.getElementById('fps-value').textContent = '0';
+            document.getElementById('detection-status').textContent = 'Idle';
+            
             document.getElementById('camera-text').textContent = 'Start Camera';
             document.getElementById('camera-icon').textContent = '🎥';
             updateStatus('Camera Stopped', 'yellow');
         }
         
-        // Handle file upload (UPDATED with model selection)
+        // Enhanced file upload with model selection
         async function handleFileUpload(file) {
             const formData = new FormData();
             formData.append('file', file);
             if (selectedModel) {
                 formData.append('selected_model', selectedModel);
             }
+            
+            updateStatus('Processing Upload...', 'yellow');
             
             try {
                 const response = await fetch(`${API_BASE_URL}/api/detect/upload`, {
@@ -738,29 +896,39 @@
                     
                     // Show upload result
                     const resultDiv = document.getElementById('upload-result');
+                    const model = availableModels.find(m => m.id === result.model_used);
+                    
                     resultDiv.className = 'mt-4 glass-effect rounded-lg p-4 slide-up';
                     resultDiv.innerHTML = `
                         <div class="flex items-center space-x-4">
                             <div class="text-4xl">${emotionConfig[result.emotion].emoji}</div>
-                            <div>
+                            <div class="flex-1">
                                 <p class="font-semibold">Detected: ${result.emotion}</p>
                                 <p class="text-sm text-gray-300">Confidence: ${Math.round(result.confidence * 100)}%</p>
-                                <p class="text-xs text-gray-400">Model: ${result.model_used.split('/').pop()}</p>
+                                <p class="text-xs text-gray-400">
+                                    Model: ${model?.name || result.model_used.split('/').pop()} 
+                                    (${model?.provider || 'Unknown'})
+                                </p>
+                                <p class="text-xs text-gray-500">Processing time: ${Math.round(result.processing_time * 1000)}ms</p>
                             </div>
                         </div>
                     `;
+                    
+                    updateStatus('Upload Complete', 'green');
+                    setTimeout(() => updateStatus('Ready', 'green'), 3000);
                 } else {
                     throw new Error(`HTTP ${response.status}`);
                 }
             } catch (error) {
                 console.error('Upload error:', error);
+                updateStatus('Upload Failed', 'red');
                 alert('Failed to process image');
             }
         }
         
         // Event listeners
         document.getElementById('toggle-camera').addEventListener('click', () => {
-            if (camera) {
+            if (camera && isCameraActive) {
                 stopCamera();
             } else {
                 initCamera();
@@ -768,10 +936,12 @@
         });
         
         document.getElementById('capture-btn').addEventListener('click', () => {
-            captureAndDetect(null);
+            if (isCameraActive) {
+                captureAndDetect(null);
+            }
         });
 
-        // NEW: Model selector toggle
+        // Model selector toggle
         document.getElementById('model-selector-btn').addEventListener('click', () => {
             const dropdown = document.getElementById('model-dropdown');
             dropdown.classList.toggle('hidden');
@@ -793,47 +963,62 @@
             }
         });
         
-        // Drag and drop
+        // Enhanced drag and drop
         const dropZone = document.querySelector('[for="file-input"]').parentElement;
         
         dropZone.addEventListener('dragover', (e) => {
             e.preventDefault();
-            dropZone.classList.add('border-white/60');
+            dropZone.classList.add('border-white/60', 'bg-white/5');
         });
         
         dropZone.addEventListener('dragleave', () => {
-            dropZone.classList.remove('border-white/60');
+            dropZone.classList.remove('border-white/60', 'bg-white/5');
         });
         
         dropZone.addEventListener('drop', (e) => {
             e.preventDefault();
-            dropZone.classList.remove('border-white/60');
+            dropZone.classList.remove('border-white/60', 'bg-white/5');
             
             const file = e.dataTransfer.files[0];
             if (file && file.type.startsWith('image/')) {
                 handleFileUpload(file);
+            } else {
+                alert('Please drop a valid image file');
             }
         });
         
         // Initialize on load
         window.addEventListener('load', async () => {
-            initFaceDetection();
-            initWebSocket();
+            updateStatus('Initializing...', 'yellow');
             
-            // Load available models
-            await loadAvailableModels();
-            
-            // Check API status
-            fetch(`${API_BASE_URL}/api/status`)
-                .then(res => res.json())
-                .then(data => {
-                    console.log('API Status:', data);
-                    updateStatus('Ready', 'green');
-                })
-                .catch(err => {
-                    console.error('API not available:', err);
-                    updateStatus('API Error', 'red');
-                });
+            try {
+                // Initialize components
+                initFaceDetection();
+                initWebSocket();
+                
+                // Load available models
+                await loadAvailableModels();
+                
+                // Check API status
+                const response = await fetch(`${API_BASE_URL}/api/status`);
+                const data = await response.json();
+                console.log('API Status:', data);
+                
+                updateStatus('Ready', 'green');
+            } catch (error) {
+                console.error('Initialization failed:', error);
+                updateStatus('Initialization Failed', 'red');
+            }
+        });
+        
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (camera && isCameraActive) {
+                stopCamera();
+            }
+            if (ws) {
+                ws.close();
+            }
         });
     </script>
 </body>
