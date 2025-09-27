@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Facial Emotion Detector - Real-time Analysis</title>
+    <title>Facial Emotion Detector - Multi-Provider Analysis</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -45,6 +45,38 @@
         
         .slide-up {
             animation: slideUp 0.5s ease-out;
+        }
+
+        .model-selector {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .model-option {
+            transition: all 0.2s ease;
+        }
+
+        .model-option:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .model-option.selected {
+            background: rgba(59, 130, 246, 0.2);
+            border-left: 4px solid #3B82F6;
+        }
+
+        .model-option.unavailable {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* NEW: Provider-specific styles */
+        .provider-tag {
+            font-size: 0.7rem;
+            padding: 2px 6px;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.15);
+            margin-left: 6px;
         }
     </style>
 </head>
@@ -132,6 +164,9 @@
                                 </div>
                             </div>
                         </div>
+                        <div id="provider-info" class="mt-4 text-sm text-gray-400">
+                            Provider: <span id="provider-name">N/A</span>
+                        </div>
                     </div>
                 </div>
 
@@ -147,8 +182,30 @@
             </div>
         </div>
 
-        <!-- History & Stats -->
-        <div class="grid md:grid-cols-3 gap-6 slide-up" style="animation-delay: 0.2s">
+        <!-- Enhanced Stats & Model Selection -->
+        <div class="grid md:grid-cols-4 gap-6 mb-8 slide-up" style="animation-delay: 0.2s">
+            <!-- Model Selection -->
+            <div class="glass-effect rounded-xl p-4">
+                <h3 class="font-semibold mb-3 flex items-center">
+                    <span class="mr-2">🤖</span> Model Selection
+                </h3>
+                <div class="space-y-2">
+                    <div class="text-xs text-gray-300 mb-2">Current Model:</div>
+                    <div id="current-model" class="text-sm font-mono text-blue-300 mb-3">Loading...</div>
+                    
+                    <button id="model-selector-btn" class="w-full glass-effect px-3 py-2 rounded text-sm hover:bg-white/20 transition">
+                        Select Model
+                    </button>
+                    
+                    <!-- Dropdown Model List -->
+                    <div id="model-dropdown" class="hidden model-selector glass-effect rounded-lg mt-2 p-2">
+                        <div id="model-list">
+                            <!-- Models will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Processing Stats -->
             <div class="glass-effect rounded-xl p-4">
                 <h3 class="font-semibold mb-3 flex items-center">
@@ -160,8 +217,8 @@
                         <span id="proc-time" class="font-mono">0ms</span>
                     </div>
                     <div class="flex justify-between">
-                        <span class="text-gray-300">Model:</span>
-                        <span id="model-name" class="text-xs truncate max-w-[150px]">Loading...</span>
+                        <span class="text-gray-300">Model Accuracy:</span>
+                        <span id="model-accuracy" class="text-xs">~85%</span>
                     </div>
                     <div class="flex justify-between">
                         <span class="text-gray-300">Frames Processed:</span>
@@ -236,6 +293,8 @@
         let lastFrameTime = Date.now();
         let fpsValues = [];
         let emotionHistory = [];
+        let availableModels = [];
+        let selectedModel = null;
         
         // Emotion configuration
         const emotionConfig = {
@@ -327,6 +386,8 @@
                 const message = JSON.parse(event.data);
                 if (message.type === 'result') {
                     handleEmotionResult(message.data);
+                } else if (message.type === 'model_selected') {
+                    handleModelSelection(message.data);
                 } else if (message.type === 'error') {
                     console.error('WebSocket error:', message.data);
                     updateStatus('Error', 'red');
@@ -344,8 +405,118 @@
                 setTimeout(initWebSocket, 3000);
             };
         }
+
+        // NEW: Load available models
+        async function loadAvailableModels() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/models`);
+                if (response.ok) {
+                    const data = await response.json();
+                    availableModels = data.models;
+                    updateModelSelector();
+                    
+                    // Set current selected model
+                    const currentModel = availableModels.find(m => m.selected);
+                    if (currentModel) {
+                        selectedModel = currentModel.id;
+                        document.getElementById('current-model').textContent = 
+                            currentModel.name || currentModel.id.split('/').pop();
+                        document.getElementById('model-accuracy').textContent = currentModel.accuracy || '~85%';
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load models:', error);
+            }
+        }
+
+        // NEW: Update model selector UI
+        function updateModelSelector() {
+            const modelList = document.getElementById('model-list');
+            modelList.innerHTML = '';
+            
+            if (availableModels.length === 0) {
+                modelList.innerHTML = '<div class="text-xs text-gray-400 p-2">No models available</div>';
+                return;
+            }
+            
+            if (availableModels.length === 1) {
+                // Only one model available - show as disabled selector
+                document.getElementById('model-selector-btn').textContent = 'Single Model Available';
+                document.getElementById('model-selector-btn').disabled = true;
+                return;
+            }
+            
+            availableModels.forEach(model => {
+                const modelDiv = document.createElement('div');
+                modelDiv.className = `model-option p-2 cursor-pointer rounded text-xs ${
+                    model.selected ? 'selected' : ''
+                } ${!model.available ? 'unavailable' : ''}`;
+                
+                modelDiv.innerHTML = `
+                    <div class="font-semibold">${model.name}</div>
+                    <div class="text-gray-300 text-xs">${model.description}</div>
+                    <div class="flex justify-between mt-1">
+                        <span class="text-xs">Accuracy: ${model.accuracy}</span>
+                        <span class="text-xs ${model.available ? 'text-green-400' : 'text-red-400'}">
+                            ${model.available ? '✓ Ready' : '✗ Unavailable'}
+                        </span>
+                    </div>
+                `;
+                
+                if (model.available) {
+                    modelDiv.addEventListener('click', () => selectModel(model.id, model.name));
+                }
+                
+                modelList.appendChild(modelDiv);
+            });
+        }
+
+        // NEW: Select model
+        async function selectModel(modelId, modelName) {
+            try {
+                // Update via WebSocket if connected
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'model_select',
+                        data: { model_id: modelId }
+                    }));
+                } else {
+                    // Fallback to HTTP API
+                    const response = await fetch(`${API_BASE_URL}/api/models/select`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ model_id: modelId })
+                    });
+                    
+                    if (response.ok) {
+                        const result = await response.json();
+                        handleModelSelection({ success: result.success, selected_model: modelId });
+                    }
+                }
+            } catch (error) {
+                console.error('Model selection failed:', error);
+            }
+        }
+
+        // NEW: Handle model selection response
+        function handleModelSelection(data) {
+            if (data.success) {
+                selectedModel = data.selected_model;
+                const model = availableModels.find(m => m.id === selectedModel);
+                if (model) {
+                    document.getElementById('current-model').textContent = model.name || model.id.split('/').pop();
+                    document.getElementById('model-accuracy').textContent = model.accuracy || '~85%';
+                    
+                    // Update UI
+                    updateModelSelector();
+                    document.getElementById('model-dropdown').classList.add('hidden');
+                    
+                    console.log(`Model changed to: ${model.name}`);
+                }
+            }
+        }
         
-        // Capture frame and detect emotion
+        // Capture frame and detect emotion (UPDATED with model selection)
         async function captureAndDetect(faceDetection) {
             if (isProcessing) return;
             isProcessing = true;
@@ -378,7 +549,8 @@
                     type: 'frame',
                     data: {
                         image: imageData,
-                        face_bounds: faceBounds
+                        face_bounds: faceBounds,
+                        selected_model: selectedModel  // NEW: Include selected model
                     }
                 }));
             } else {
@@ -389,7 +561,8 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             image: imageData.split(',')[1],
-                            face_bounds: faceBounds
+                            face_bounds: faceBounds,
+                            selected_model: selectedModel  // NEW: Include selected model
                         })
                     });
                     
@@ -430,8 +603,6 @@
             // Update stats
             document.getElementById('proc-time').textContent = 
                 `${Math.round(result.processing_time * 1000)}ms`;
-            document.getElementById('model-name').textContent = 
-                result.model_used || 'Unknown';
             document.getElementById('frame-count').textContent = frameCount;
             
             // Add to history
@@ -547,10 +718,13 @@
             updateStatus('Camera Stopped', 'yellow');
         }
         
-        // Handle file upload
+        // Handle file upload (UPDATED with model selection)
         async function handleFileUpload(file) {
             const formData = new FormData();
             formData.append('file', file);
+            if (selectedModel) {
+                formData.append('selected_model', selectedModel);
+            }
             
             try {
                 const response = await fetch(`${API_BASE_URL}/api/detect/upload`, {
@@ -571,6 +745,7 @@
                             <div>
                                 <p class="font-semibold">Detected: ${result.emotion}</p>
                                 <p class="text-sm text-gray-300">Confidence: ${Math.round(result.confidence * 100)}%</p>
+                                <p class="text-xs text-gray-400">Model: ${result.model_used.split('/').pop()}</p>
                             </div>
                         </div>
                     `;
@@ -594,6 +769,21 @@
         
         document.getElementById('capture-btn').addEventListener('click', () => {
             captureAndDetect(null);
+        });
+
+        // NEW: Model selector toggle
+        document.getElementById('model-selector-btn').addEventListener('click', () => {
+            const dropdown = document.getElementById('model-dropdown');
+            dropdown.classList.toggle('hidden');
+        });
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            const dropdown = document.getElementById('model-dropdown');
+            const btn = document.getElementById('model-selector-btn');
+            if (!dropdown.contains(e.target) && !btn.contains(e.target)) {
+                dropdown.classList.add('hidden');
+            }
         });
         
         document.getElementById('file-input').addEventListener('change', (e) => {
@@ -626,9 +816,12 @@
         });
         
         // Initialize on load
-        window.addEventListener('load', () => {
+        window.addEventListener('load', async () => {
             initFaceDetection();
             initWebSocket();
+            
+            // Load available models
+            await loadAvailableModels();
             
             // Check API status
             fetch(`${API_BASE_URL}/api/status`)
